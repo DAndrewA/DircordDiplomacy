@@ -233,8 +233,38 @@ def check_valid_convoy(order,map):
     3) target must contain a land unit. If it belongs to another team, then this will throw a warning
     
     INPUTS:
-        order [Order object]:
+        order [Order object]: The order object that is being validated.
         
-        map [Map object]: 
+        map [Map object]: the Map on which the game is being played.
+
+    RETURNS:
+        error [string]: None if no errors, a string explaining any problems if there is an issue.
+        
+        warning [ string]: a string explaining any considerations that may need to be made about a given order.
     '''
-    pass
+    error = None
+    warning = None
+    
+    initial = order.parsed[1]
+    target = order.parsed[2]
+    # 1) checking that the initial tile is a SEA tile
+    list_tiles = ['None', 'LAND', 'SEA', 'COASTAL']
+    initial_type = map.adjacency_matrix[initial][initial]
+    if initial_type != 2:
+        error = f'Convoy: initial tile must be SEA, is {list_tiles[initial_type]}.'
+        return error, warning
+    # 2) target must be a coastal tile
+    target_type = map.adjacency_matrix[target][target]
+    if target_type != 3:
+        error = f'Convoy: target tile must be COASTAL, is {list_tiles[target_type]}.'
+        return error, warning
+    # 3) check target contains a land unit
+    target_info = map.get_info_from_tile_id(target)
+    if target_info[1] != 1:
+        list_units = ['None', 'LAND', 'SEA']
+        error = f'Convoy: target unit must be LAND, is a {list_units[target_info[1]]}-unit.'
+        return error, warning
+    # otherwise, convoy is valid, check if for another team:
+    if order.Team.id != target_info[0]:
+        warning = f'Convoy warning: Order by Team.id={order.Team.id} to convoy unit from Team.id={target_info[0]}.'
+    return error, warning
