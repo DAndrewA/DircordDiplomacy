@@ -221,7 +221,6 @@ def check_valid_support(order,map):
     return error, warning
 
 
-
 def check_valid_convoy(order,map):
     '''Function to determine if a convoy order is valid.
     
@@ -268,3 +267,101 @@ def check_valid_convoy(order,map):
     if order.Team.id != target_info[0]:
         warning = f'Convoy warning: Order by Team.id={order.Team.id} to convoy unit from Team.id={target_info[0]}.'
     return error, warning
+
+
+def check_valid_move(order,map):
+    '''Function to determine the validity of a Move Order.
+    
+    A parsed move order can take two forms:
+        a) ['m', initial, target]
+        b) ['m', initial, convoy_1, ..., convoy_n, target]
+        
+    For a move order to be valid:
+    a)  1) initial and target have an adjacency that allows movement of the unit on initial.
+        2) there isn't a friendly unit on target (no self-attacking).
+    
+    b)  1) intial and target are both coastal tiles
+        2) the unit on initial is a land unit
+        3) there isn't a friendly unit on target (no self-attacking)
+        4) For each consecutive pair of indices, they are adjacent so a convoy can be made
+        5) SEA units exist on each tile in the convoy that is a SEA tile
+
+    INPUTS:
+        order [Order object]: The order object that is being validated.
+        
+        map [Map object]: the Map on which the game is being played.
+
+    RETURNS:
+        error [string]: None if no errors, a string explaining any problems if there is an issue.
+        
+        warning [ string]: a string explaining any considerations that may need to be made about a given order.    
+    '''
+    error = None
+    warning = None
+    
+    parsed = order.parsed
+    initial = parsed[1]
+    target = parsed[-1]
+    initial_info = map.get_info_from_tile_id(initial)
+    target_info = map.get_info_from_tile_id(target)
+    unit = initial_info[0]
+    
+    list_units = ['None', 'LAND', 'SEA']
+    list_tiles = ['None', 'LAND', 'SEA', 'COASTAL']
+
+    # first, determine the type of move order being given, a or b:
+    if len(parsed) == 3: # type (a)
+        target = parsed[2]
+        # a1) initial and target have the right adjacency for the unit
+        adj = map.adjacency_matrix[initial][parsed]
+        if not (unit & adj): # bitwise operation as seen in check_valid_support
+            error = f'Move: {list_units[unit]} unit cannot move along {list_tiles[adj]} adjacency.'
+            return error, warning
+        # a2) there isn't a friendly unit on target
+        if (target_info[0] == order.Team.id) and target_info[1]:
+            error = f'Move: cannot move into a tile where a friendly unit already exists (self-attacking).'
+            return error, warning
+        # otherwise, the move is valid, return None and None
+        return None, None
+    # type (b): in this case, convoy orders have hopefully been issued.
+    convoy = parsed[1:] # initially include initial and target in the convoy List for checking adjacency.
+    # b1) both initial and target are coastal tiles
+    initial_type = map.adjacency_matrix[initial][initial]
+    target_type = map.adjacency_matrix[target][target]
+    if initial_type != 3:
+        error = f'Move - convoy: Initial tile {initial} is of type {list_tiles[initial_type]}, not COASTAL.'
+        return error,warning
+    if target_type != 3:
+        error = f'Move - convoy: Target tile {target} is of type {list_tiles[target_type]}, not COASTAL.'
+        return error, warning
+    # b2) check the unit on initial is a land unit
+    if unit != 1:
+        error = f'Move - convoy: Unit on initial tile {initial} is of type {list_units[unit]}, not LAND.'
+        return error, warning
+    # b3) check no self-attacking
+    if (order.Team.id == target_info[0]) and target_info[1]:
+        error = f'Move - convoy: Friendly unit on target tile: no self-attacking.'
+        return error, warning
+    # b4) for each adjacent pair of indices, check they are ocean-adjacent (i.e. adj&2)
+    for i,c2 in convoy[1:]: # this way, i refers to the value before c2 in convoy
+        c1 = convoy[i]
+        adj = map.adjacency_matrix[c1][c2]
+        if not adj&2: # if not ocean-adjacent
+            error = f'Move - convoy: Adjacency ({i=}) between {c1} and {c2} is of type {list_tiles[adj]}, not OCEANIC.'
+            return error, warning
+    # b5) SEA units exist on each part of the convoy
+    convoy = parsed[2:-1]
+    for c in convoy:
+        c_info = map.get_info_from_tile_id(c)
+        if c_info[1] != 2:
+            error = f'Move - convoy: unit on {c} is of type {list_units[c_info[1]]}, not SEA.'
+            return error, warning
+        if c_info[0] != order.Team.id:
+            if warning is None:
+                warning = 'Move - convoy: warning: '
+            warning += f'unit on tile {c} belongs to Team.id={c_info[0]}; '
+    # all checks have been made!
+    return error, warning
+
+
+
